@@ -6,8 +6,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -192,6 +194,104 @@ func getStockDataByTicker(c *gin.Context) {
 	c.JSON(http.StatusOK, stockData)
 }
 
+var jwtSecret = []byte("sample-secret-key")
+
+// Helper function to generate JWT
+func GenerateJWT(username string) (string, error) {
+	// Create the token with claims
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"username": username,
+		"exp":      time.Now().Add(time.Hour * 2).Unix(), // Token expires in 2 hours
+	})
+
+	// Sign the token with our secret key
+	tokenString, err := token.SignedString(jwtSecret)
+	if err != nil {
+		return "", err
+	}
+
+	return tokenString, nil
+}
+
+func login(c *gin.Context) {
+	var user struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	// Parse the JSON body into the user struct
+	if err := c.ShouldBindJSON(&user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	if user.Username == "admin" && user.Password == "password" {
+		// Generate JWT token
+		token, err := GenerateJWT(user.Username)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate token"})
+			return
+		}
+
+		// Return the token
+		c.JSON(http.StatusOK, gin.H{"token": token})
+	} else {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	}
+}
+
+// Middleware to protect routes and validate JWT
+func JWTAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get the Authorization header (format: "Bearer <token>")
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization token required"})
+			c.Abort() // Stop further processing
+			return
+		}
+
+		// Token usually comes as "Bearer <token>"
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
+			c.Abort()
+			return
+		}
+
+		tokenString := parts[1]
+
+		// Parse and validate the token
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			// Ensure the token's signing method is HMAC (HS256)
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return jwtSecret, nil // Use the secret to validate the token
+		})
+
+		if err != nil || !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			c.Abort()
+			return
+		}
+
+		// Token is valid, extract claims (like username)
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
+			c.Abort()
+			return
+		}
+
+		// Save the username from the token into the context for use in other routes
+		c.Set("username", claims["username"])
+
+		// Proceed to the next middleware/handler
+		c.Next()
+	}
+}
+
 func main() {
 	initDB()
 	defer db.Close()
@@ -200,5 +300,18 @@ func main() {
 	r.GET("/stocks", getAllStocks)
 	r.GET("/latest", getLatestTickerData)
 	r.GET("/stocks/:ticker", getStockDataByTicker)
+	r.POST("/login", login)
+
+	// Protected route - only accessible with a valid JWT
+	r.GET("/dashboard", JWTAuthMiddleware(), func(c *gin.Context) {
+		// Access the username from the token (stored in context by the middleware)
+		username := c.MustGet("username").(string)
+
+		// Return a response with the username
+		c.JSON(http.StatusOK, gin.H{
+			"message":  "Welcome to your dashboard!",
+			"username": username,
+		})
+	})
 	r.Run(":8080")
 }
