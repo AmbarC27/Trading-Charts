@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-contrib/cors"
+
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -297,6 +299,7 @@ func main() {
 	defer db.Close()
 
 	r := gin.Default()
+	r.Use(cors.Default())
 	r.GET("/stocks", getAllStocks)
 	r.GET("/latest", getLatestTickerData)
 	r.GET("/stocks/:ticker", getStockDataByTicker)
