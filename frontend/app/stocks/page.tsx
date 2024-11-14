@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import './style.css';
 
 interface Stock {
@@ -18,6 +20,7 @@ interface Stock {
 export default function Stocks() {
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     const fetchStocks = async () => {
@@ -37,7 +40,7 @@ export default function Stocks() {
     fetchStocks();
   }, []);
 
-  if (error) return <div>{error}</div>;
+  if (error || stocks.length === 0) return <div>{error}</div>;
 
   return (
     <div>
@@ -52,24 +55,32 @@ export default function Stocks() {
             <th>Low</th>
             <th>Close</th>
             <th>Volume</th>
-            <th>Dividends</th>
-            <th>Stock Splits</th>
+            {/* <th>Dividends</th>
+            <th>Stock Splits</th> */}
+            <th>Diff</th>
           </tr>
         </thead>
         <tbody>
-          {stocks.map((stock) => (
-            <tr key={stock.ticker}>
-              <td>{stock.datetime}</td>
-              <td>{stock.ticker}</td>
-              <td>{stock.open}</td>
-              <td>{stock.high}</td>
-              <td>{stock.low}</td>
-              <td>{stock.close}</td>
-              <td>{stock.volume}</td>
-              <td>{stock.dividends}</td>
-              <td>{stock.stock_splits}</td>
-            </tr>
-          ))}
+          {stocks.map((stock) => {
+            const diff = stock.close - stock.open;
+            return (
+              <tr 
+                key={stock.ticker}
+                onClick={() => router.push(`/stocks/${stock.ticker}`)}
+              >
+                <td>{new Date(stock.datetime).toLocaleString()}</td>
+                <td>{stock.ticker}</td>
+                <td>{stock.open.toFixed(2)}</td>
+                <td>{stock.high.toFixed(2)}</td>
+                <td>{stock.low.toFixed(2)}</td>
+                <td>{stock.close.toFixed(2)}</td>
+                <td>{stock.volume}</td>
+                {/* <td>{stock.dividends.toFixed(2)}</td>
+                <td>{stock.stock_splits.toFixed(2)}</td> */}
+                <td>{diff.toFixed(2)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
