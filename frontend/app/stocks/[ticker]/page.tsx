@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-// import './style.css';
+import { Line } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from 'chart.js';
+
+// Register Chart.js components
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
 interface Stock {
   datetime: string;
@@ -16,11 +20,15 @@ interface Stock {
   ticker: string;
 }
 
-export default function StockList() {
+export default function StockDetails() {
   const [stocks, setStocks] = useState<Stock[]>([]);
+  const [filteredStocks, setFilteredStocks] = useState<Stock[]>([]);
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const { ticker } = useParams();
 
+  // Fetch all stock data for the ticker on initial load
   useEffect(() => {
     const fetchStocks = async () => {
       try {
@@ -30,51 +38,111 @@ export default function StockList() {
         }
         const data: Stock[] = await response.json();
         setStocks(data);
+        setFilteredStocks(data); // Initially, show all data
       } catch (error) {
         setError("Failed to fetch stock data. Please try again.");
         console.error("Fetch error:", error);
       }
     };
-    if (ticker) {
-      fetchStocks();
-    }
+
+    fetchStocks();
   }, [ticker]);
 
-  if (error) return <div>{error}</div>;
-  if (stocks.length === 0) return <div>Loading...</div>;
+  // Function to handle date range filtering
+  const filterStocksInRange = () => {
+    if (!startDate || !endDate) {
+      setError("Please select both start and end dates.");
+      return;
+    }
+
+    const filteredData = stocks.filter((stock) => {
+      const stockDate = new Date(stock.datetime);
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      return stockDate >= start && stockDate <= end;
+    });
+
+    if (filteredData.length === 0) {
+      setError("No data available for the selected date range.");
+    } else {
+      setFilteredStocks(filteredData);
+      setError(null); // Clear error if data is found
+    }
+  };
+
+  // Chart Data
+  const chartData = {
+    labels: filteredStocks.map(stock => new Date(stock.datetime).toLocaleString()),
+    datasets: [
+      {
+        label: `Closing Prices (${ticker})`,
+        data: filteredStocks.map(stock => stock.close),
+        borderColor: 'rgba(75,192,192,1)',
+        backgroundColor: 'rgba(75,192,192,0.2)',
+        pointRadius: 3,
+        borderWidth: 2,
+      },
+    ],
+  };
+
+  // Chart Options
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: { display: true },
+      tooltip: { mode: 'index', intersect: false },
+    },
+    scales: {
+      x: { title: { display: true, text: 'Datetime' } },
+      y: { title: { display: true, text: 'Closing Price' } },
+    },
+  };
 
   return (
     <div>
-      <h1>Stock History for: {ticker}</h1>
-      <table>
-        <thead>
-          <tr>
-            <th>Datetime</th>
-            <th>Open</th>
-            <th>High</th>
-            <th>Low</th>
-            <th>Close</th>
-            <th>Volume</th>
-            <th>Diff</th>
-          </tr>
-        </thead>
-        <tbody>
-          {stocks.map((stock, index) => {
-            const diff = stock.close - stock.open;
-            return (
-              <tr key={index}>
-                <td>{new Date(stock.datetime).toLocaleString()}</td>
-                <td>{stock.open.toFixed(2)}</td>
-                <td>{stock.high.toFixed(2)}</td>
-                <td>{stock.low.toFixed(2)}</td>
-                <td>{stock.close.toFixed(2)}</td>
-                <td>{stock.volume}</td>
-                <td>{diff.toFixed(2)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <h1>Stock Closing Prices: {ticker}</h1>
+
+      <div style={{ marginBottom: '20px' }}>
+        <label>
+          Start Date: 
+          <input 
+            type="datetime-local" 
+            value={startDate} 
+            onChange={(e) => setStartDate(e.target.value)} 
+            style={{ marginLeft: '10px', marginRight: '20px' }}
+          />
+        </label>
+        <label>
+          End Date: 
+          <input 
+            type="datetime-local" 
+            value={endDate} 
+            onChange={(e) => setEndDate(e.target.value)} 
+            style={{ marginLeft: '10px' }}
+          />
+        </label>
+        <button 
+          onClick={filterStocksInRange} 
+          style={{ 
+            marginLeft: '20px', 
+            backgroundColor: '#FFF',
+            border: 'none', // Optional: Remove border for a cleaner look
+            padding: '10px 20px', // Optional: Adjust padding for better appearance
+            cursor: 'pointer' // Optional: Change cursor to pointer on hover
+          }}
+        >
+          Search in Following Range
+        </button>
+      </div>
+
+      {error && <div style={{ color: 'red', marginBottom: '20px' }}>{error}</div>}
+
+      {filteredStocks.length > 0 ? (
+        <Line data={chartData} options={chartOptions} />
+      ) : (
+        <div>No data available for the selected range.</div>
+      )}
     </div>
   );
 }
